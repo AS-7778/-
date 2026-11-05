@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>營業稅統計與對帳系統 (雲端/測試雙模式)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDK (Compat v9) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; }
+        .remind-box { border-left: 4px solid #f59e0b; background-color: #fffbeb; }
+        .editable-cell:hover { background-color: #f1f5f9; cursor: pointer; border-radius: 4px; }
+        .editing-input { width: 100%; padding: 4px 8px; border: 2px solid #3b82f6; border-radius: 6px; outline: none; font-size: inherit; }
+        
+        .tab-btn { transition: all 0.2s; border-bottom: 3px solid transparent; }
+        .tab-btn.active { border-color: #3b82f6; color: #3b82f6; font-weight: 700; background-color: #ffffff; }
+
+        #print-area-1, #print-area-2 { display: none; }
+
+        @media print {
+            .no-print, header, nav, button, select, .input-area { display: none !important; }
+            body { background: white; padding: 0; margin: 0; }
+            .tab-content { display: none !important; }
+            .tab-content.print-active { display: block !important; }
+            #print-area-1, #print-area-2 { display: block !important; }
+            .print-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+            .print-table th, .print-table td { border: 1px solid #000; padding: 6px; text-align: left; }
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800 pb-20">
+
+    <!-- 登入畫面遮罩 (Login Screen) -->
+    <div id="loginScreen" class="fixed inset-0 bg-slate-900/90 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-100">
+            <div class="text-center mb-6">
+                <div class="w-12 h-12 bg-blue-600 text-white rounded-2xl mx-auto flex items-center justify-center font-black text-xl mb-3 shadow-lg shadow-blue-500/30">AS</div>
+                <h2 class="text-2xl font-black text-slate-900">營業稅對帳與統計系統</h2>
+                <p class="text-slate-400 text-xs mt-1">請選擇登入方式以開始使用</p>
+            </div>
+
+            <!-- Google 快捷登入按鈕 -->
+            <button onclick="loginWithGoogle()" class="w-full bg-white hover:bg-slate-50 border-2 border-slate-200 text-slate-700 py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-3 shadow-sm mb-3">
+                <svg class="w-5 h-5" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+                    <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.13 0-5.78-2.11-6.73-4.96H1.18v3.15C3.16 21.32 7.23 24 12 24z"/>
+                    <path fill="#FBBC05" d="M5.27 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.6H1.18C.43 8.12 0 9.82 0 12s.43 3.88 1.18 5.4l4.09-3.16z"/>
+                    <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.23 0 3.16 2.68 1.18 6.6l4.09 3.15c.95-2.85 3.6-4.96 6.73-4.96z"/>
+                </svg>
+                使用 Google 帳號快速登入
+            </button>
+
+            <!-- 測試人員單機登入按鈕 -->
+            <button onclick="loginAsTester()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border border-slate-200 mb-4 text-xs">
+                <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                以測試人員身份登入 (單機測試/僅存本機)
+            </button>
+
+            <div class="relative flex py-2 items-center">
+                <div class="flex-grow border-t border-slate-200"></div>
+                <span class="flex-shrink mx-4 text-slate-400 text-xs font-bold">或使用帳號密碼</span>
+                <div class="flex-grow border-t border-slate-200"></div>
+            </div>
+
+            <form id="loginForm" class="space-y-3 mt-2">
+                <div>
+                    <input type="email" id="loginEmail" class="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 font-bold" placeholder="電子郵件">
+                </div>
+                <div>
+                    <input type="password" id="loginPassword" class="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 font-bold" placeholder="密碼">
+                </div>
+                <div id="loginError" class="text-xs text-rose-500 font-bold hidden"></div>
+                <button type="submit" class="w-full bg-slate-900 hover:bg-black text-white py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg">帳號密碼登入</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 頂部頁籤與狀態列 (Navigation) -->
+    <nav class="bg-slate-900 text-slate-400 no-print sticky top-0 z-40 shadow-md">
+        <div class="max-w-7xl mx-auto px-4 flex justify-between items-center">
+            <div class="flex space-x-2 text-sm font-bold">
+                <button onclick="switchTab('tab1')" id="btn-tab1" class="tab-btn active px-5 py-4 flex items-center gap-2 focus:outline-none">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    昕鎧國際有限公司
+                </button>
+                <button onclick="switchTab('tab2')" id="btn-tab2" class="tab-btn px-5 py-4 flex items-center gap-2 focus:outline-none">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                    震峰有限公司
+                </button>
+            </div>
+            <div class="flex items-center gap-3 text-xs">
+                <span id="userEmailDisplay" class="text-slate-300 font-bold hidden md:inline"></span>
+                <button onclick="logout()" class="bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg transition-all">登出</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 py-6">
+
+        <!-- ==================== 分頁 1：昕鎧國際有限公司 ==================== -->
+        <div id="tab1" class="tab-content print-active">
+            <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
+                <div>
+                    <h1 class="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                        昕鎧國際有限公司 
+                        <span class="bg-blue-600 text-white text-xs px-2.5 py-1 rounded-md font-normal">統編 00032793</span>
+                    </h1>
+                    <p class="text-slate-500 mt-1 flex items-center gap-2 text-sm">
+                        <span id="syncDot1" class="inline-block w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span> 
+                        <span id="syncStatus1">載入中...</span>
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <select id="typeFilter1" class="bg-white border border-slate-300 rounded-xl px-4 py-2 shadow-sm text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" onchange="renderAll1()">
+                        <option value="all">所有類型</option>
+                        <option value="sales">僅看銷項 (收入)</option>
+                        <option value="purchase">僅看進項 (支出)</option>
+                    </select>
+                    <select id="periodFilter1" class="bg-white border border-slate-300 rounded-xl px-4 py-2 shadow-sm text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" onchange="renderAll1()">
+                        <option value="all">所有期間</option>
+                        <option value="1">01-02月</option><option value="2">03-04月</option>
+                        <option value="3">05-06月</option><option value="4">07-08月</option>
+                        <option value="5">09-10月</option><option value="6" selected>11-12月</option>
+                    </select>
+                    <button onclick="exportCSV(1)" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl transition-all flex items-center gap-2 text-sm font-bold shadow-lg">
+                        匯出 Excel 明細
+                    </button>
+                    <button onclick="window.print()" class="bg-[#1e293b] hover:bg-black text-white px-6 py-2 rounded-xl transition-all flex items-center gap-2 text-sm font-bold shadow-lg">
+                        列印/匯出 PDF
+                    </button>
+                </div>
+            </header>
+
+            <!-- 統計卡片 -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 no-print text-sm">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 relative">
+                    <span id="countSales1" class="absolute top-4 right-4 bg-blue-50 text-blue-600 text-[10px] px-2 py-0.5 rounded-full font-black">0 筆</span>
+                    <p class="text-slate-400 font-bold mb-1 uppercase">總銷項(含稅)</p>
+                    <h3 id="statTotalSalesIncl1" class="text-3xl font-black text-blue-600 tracking-tighter">$0</h3>
+                </div>
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 relative">
+                    <span id="countPurchases1" class="absolute top-4 right-4 bg-emerald-50 text-emerald-600 text-[10px] px-2 py-0.5 rounded-full font-black">0 筆</span>
+                    <p class="text-slate-400 font-bold mb-1 uppercase">總進項(含稅)</p>
+                    <h3 id="statTotalPurchasesIncl1" class="text-3xl font-black text-emerald-600 tracking-tighter">$0</h3>
+                </div>
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <p class="text-slate-400 font-bold mb-1 uppercase">銷項稅額(5%)</p>
+                    <h3 id="statSalesTax1" class="text-3xl font-black text-slate-700 tracking-tighter">$0</h3>
+                    <p class="text-[10px] text-slate-400 mt-2 font-medium">公式：未稅額 × 0.05</p>
+                </div>
+                <div id="payableCard1" class="bg-blue-600 p-6 rounded-2xl shadow-lg border border-blue-700 text-white relative overflow-hidden">
+                    <div class="relative z-10">
+                        <p class="text-blue-100 font-bold mb-1 uppercase">本期應納/留抵額</p>
+                        <h3 id="statPayableTax1" class="text-3xl font-black tracking-tighter">$0</h3>
+                        <p id="formulaDisplay1" class="text-[10px] text-blue-200 mt-2 font-bold opacity-90">計算中...</p>
+                    </div>
+                    <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full"></div>
+                </div>
+            </div>
+
+            <!-- 上期留抵與快速新增區 -->
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8 no-print">
+                <div class="lg:col-span-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                    <label class="block text-xs font-black text-slate-500 mb-2 uppercase">上期留抵額輸入</label>
+                    <div class="relative">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                        <input type="number" id="prevOverpayment1" placeholder="0" oninput="savePrevOverpayment(1)" 
+                            class="w-full pl-7 pr-3 py-3 border-2 border-blue-50 rounded-xl text-lg outline-none focus:border-blue-500 font-black text-blue-600 transition-all">
+                    </div>
+                </div>
+
+                <div class="lg:col-span-3 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+                    <form id="taxForm1" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                        <div class="md:col-span-1">
+                            <label class="block text-xs font-black text-slate-500 mb-1">日期</label>
+                            <input type="date" id="date1" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 font-bold">
+                        </div>
+                        <div class="md:col-span-1">
+                            <label class="block text-xs font-black text-slate-500 mb-1">摘要內容 (自動判斷)</label>
+                            <input type="text" id="desc1" placeholder="例: 買車, 施工..." required class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 font-bold">
+                        </div>
+                        <div class="md:col-span-1">
+                            <label class="block text-xs font-black text-slate-500 mb-1">類型</label>
+                            <select id="type1" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm outline-none bg-white font-bold">
+                                <option value="sales">銷項(收入)</option>
+                                <option value="purchase" selected>進項(支出)</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-1 flex gap-2">
+                            <div class="flex-1">
+                                <label class="block text-xs font-black text-slate-500 mb-1">含稅總額</label>
+                                <input type="number" id="inclusiveAmount1" placeholder="0" required class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 font-black">
+                            </div>
+                            <button type="submit" class="bg-blue-600 text-white px-4 rounded-xl hover:bg-blue-700 transition-all shadow-lg flex items-center justify-center">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"></path></svg>
+                            </button>
+                        </div>
+                    </form>
+
+                    <div class="bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-100 flex justify-between text-xs font-bold text-slate-600 shadow-inner">
+                        <div>未稅淨額：<span id="previewNet1" class="font-mono text-slate-900">$0</span></div>
+                        <div class="text-right">5% 營業稅：<span id="previewTax1" class="font-mono text-blue-600">$0</span></div>
+                    </div>
+
+                    <div id="smartReminder1" class="remind-box p-3 rounded-xl hidden">
+                        <p id="reminderTitle1" class="text-xs font-black text-amber-800 mb-1">💡 昕鎧文件核對提醒</p>
+                        <ul id="reminderList1" class="text-[11px] text-amber-700 space-y-1 list-disc list-inside"></ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 表格主區 -->
+            <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden no-print mb-6">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-800 text-[10px] font-black text-slate-100 uppercase tracking-widest">
+                                <th class="px-6 py-4 w-32">日期</th>
+                                <th class="px-6 py-4 w-28">類型</th>
+                                <th class="px-6 py-4">摘要說明</th>
+                                <th class="px-6 py-4 text-right">未稅淨額</th>
+                                <th class="px-6 py-4 text-right">5% 營業稅額</th>
+                                <th class="px-6 py-4 text-right text-blue-300">含稅總額</th>
+                                <th class="px-6 py-4 text-center">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTable1" class="divide-y divide-slate-100 text-sm"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="print-area-1">
+                <h1 style="text-align:center; font-size: 24px; margin-bottom: 20px;">昕鎧國際有限公司 營業稅統計報表</h1>
+                <table class="print-table" style="width:100%; border: 1px solid black; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: #eee;">
+                            <th style="border: 1px solid black; padding: 8px;">日期</th>
+                            <th style="border: 1px solid black; padding: 8px;">類型</th>
+                            <th style="border: 1px solid black; padding: 8px;">摘要</th>
+                            <th style="border: 1px solid black; padding: 8px; text-align: right;">未稅淨額</th>
+                            <th style="border: 1px solid black; padding: 8px; text-align: right;">5% 營業稅額</th>
+                            <th style="border: 1px solid black; padding: 8px; text-align: right;">含稅總計</th>
+                        </tr>
+                    </thead>
+                    <tbody id="printTableBody1"></tbody>
+                </table>
+                <div id="printFooter1" style="margin-top: 20px; font-weight: bold; text-align: right;"></div>
+            </div>
+        </div>
+
+        <!-- ==================== 分頁 2：震峰有限公司 ==================== -->
+        <div id="tab2" class="tab-content hidden">
+            <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
+                <div>
+                    <h1 class="text-3xl font-bold text-slate-900 tracking-tight">震峰有限公司 - 營業稅統計</h1>
+                    <p class="text-slate-500 mt-1 flex items-center gap-2 text-sm">
+                        <span id="syncDot2" class="inline-block w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span> 
+                        <span id="syncStatus2">載入中...</span>
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <select id="typeFilter2" class="bg-white border border-slate-300 rounded-xl px-4 py-2 shadow-sm text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" onchange="renderAll2()">
+                        <option value="all">所有類型</option>
+                        <option value="sales">僅看銷項 (收入)</option>
+                        <option value="purchase">僅看進項 (支出)</option>
+                    </select>
+                    <select id="periodFilter2" class="bg-white border border-slate-300 rounded-xl px-4 py-2 shadow-sm text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" onchange="renderAll2()">
+                        <option value="all">所有期間</option>
+                        <option value="1">01-02月</option><option value="2">03-04月</option>
+                        <option value="3">05-06月</option><option value="4">07-08月</option>
+                        <option value="5">09-10月</option><option value="6" selected>11-12月</option>
+                    </select>
+                    <button onclick="exportCSV(2)" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl transition-all flex items-center gap-2 text-sm font-bold shadow-lg">
+                        匯出 Excel 明細
+                    </button>
+                    <button onclick="window.print()" class="bg-[#1e293b] hover:bg-black text-white px-6 py-2 rounded-xl transition-all flex items-center gap-2 text-sm font-bold shadow-lg">
+                        列印/匯出 PDF
+                    </button>
+                </div>
+            </header>
+
+            <!-- 統計卡片 -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 no-print text-sm">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 relative">
+                    <span id="countSales2" class="absolute top-4 right-4 bg-blue-50 text-blue-600 text-[10px] px-2 py-0.5 rounded-full font-black">0 筆</span>
+                    <p class="text-slate-400 font-bold mb-1 uppercase">總銷項(含稅)</p>
+                    <h3 id="statTotalSalesIncl2" class="text-3xl font-black text-blue-600 tracking-tighter">$0</h3>
+                </div>
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 relative">
+                    <span id="countPurchases2" class="absolute top-4 right-4 bg-emerald-50 text-emerald-600 text-[10px] px-2 py-0.5 rounded-full font-black">0 筆</span>
+                    <p class="text-slate-400 font-bold mb-1 uppercase">總進項(含稅)</p>
+                    <h3 id="statTotalPurchasesIncl2" class="text-3xl font-black text-emerald-600 tracking-tighter">$0</h3>
+                </div>
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <p class="text-slate-400 font-bold mb-1 uppercase">銷項稅額(5%)</p>
+                    <h3 id="statSalesTax2" class="text-3xl font-black text-slate-700 tracking-tighter">$0</h3>
+                    <p class="text-[10px] text-slate-400 mt-2 font-medium">公式：未稅額 × 0.05</p>
+                </div>
+                <div id="payableCard2" class="bg-blue-600 p-6 rounded-2xl shadow-lg border border-blue-700 text-white relative overflow-hidden">
+                    <div class="relative z-10">
+                        <p class="text-blue-100 font-bold mb-1 uppercase">本期應納/留抵額</p>
+                        <h3 id="statPayableTax2" class="text-3xl font-black tracking-tighter">$0</h3>
+                        <p id="formulaDisplay2" class="text-[10px] text-blue-200 mt-2 font-bold opacity-90">計算中...</p>
+                    </div>
+                    <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full"></div>
+                </div>
+            </div>
+
+            <!-- 上期留抵與快速新增區 -->
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8 no-print">
+                <div class="lg:col-span-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                    <label class="block text-xs font-black text-slate-500 mb-2 uppercase">上期留抵額輸入</label>
+                    <div class="relative">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                        <input type="number" id="prevOverpayment2" placeholder="0" oninput="savePrevOverpayment(2)" 
+                            class="w-full pl-7 pr-3 py-3 border-2 border-blue-50 rounded-xl text-lg outline-none focus:border-blue-500 font-black text-blue-600 transition-all">
+                    </div>
+                </div>
+
+                <div class="lg:col-span-3 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+                    <form id="taxForm2" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                        <div class="md:col-span-1">
+                            <label class="block text-xs font-black text-slate-500 mb-1">日期</label>
+                            <input type="date" id="date2" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 font-bold">
+                        </div>
+                        <div class="md:col-span-1">
+                            <label class="block text-xs font-black text-slate-500 mb-1">摘要內容</label>
+                            <input type="text" id="desc2" placeholder="輸入品項..." required class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 font-bold">
+                        </div>
+                        <div class="md:col-span-1">
+                            <label class="block text-xs font-black text-slate-500 mb-1">類型</label>
+                            <select id="type2" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm outline-none bg-white font-bold">
+                                <option value="sales">銷項(收入)</option>
+                                <option value="purchase">進項(支出)</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-1 flex gap-2">
+                            <div class="flex-1">
+                                <label class="block text-xs font-black text-slate-500 mb-1">含稅總額</label>
+                                <input type="number" id="inclusiveAmount2" placeholder="0" required class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 font-black">
+                            </div>
+                            <button type="submit" class="bg-blue-600 text-white px-4 rounded-xl hover:bg-blue-700 transition-all shadow-lg flex items-center justify-center">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"></path></svg>
+                            </button>
+                        </div>
+                    </form>
+
+                    <div class="bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-100 flex justify-between text-xs font-bold text-slate-600 shadow-inner">
+                        <div>未稅淨額：<span id="previewNet2" class="font-mono text-slate-900">$0</span></div>
+                        <div class="text-right">5% 營業稅：<span id="previewTax2" class="font-mono text-blue-600">$0</span></div>
+                    </div>
+
+                    <div id="smartHint2" class="text-[11px] mt-2 px-1 h-4 font-bold text-slate-400 transition-colors"></div>
+                </div>
+            </div>
+
+            <!-- 表格主區 -->
+            <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden no-print">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-800 text-[10px] font-black text-slate-100 uppercase tracking-widest">
+                                <th class="px-6 py-4 w-32">日期</th>
+                                <th class="px-6 py-4 w-28">類型</th>
+                                <th class="px-6 py-4">摘要說明</th>
+                                <th class="px-6 py-4 text-right">未稅淨額</th>
+                                <th class="px-6 py-4 text-right">5% 營業稅額</th>
+                                <th class="px-6 py-4 text-right text-blue-300">含稅總額</th>
+                                <th class="px-6 py-4 text-center">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTable2" class="divide-y divide-slate-100 text-sm"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="print-area-2">
+                <h1 style="text-align:center; font-size: 24px; margin-bottom: 20px;">震峰有限公司 營業稅統計報表</h1>
+                <table class="print-table" style="width:100%; border: 1px solid black; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: #eee;">
+                            <th style="border: 1px solid black; padding: 8px;">日期</th>
+                            <th style="border: 1px solid black; padding: 8px;">類型</th>
+                            <th style="border: 1px solid black; padding: 8px;">摘要</th>
+                            <th style="border: 1px solid black; padding: 8px; text-align: right;">未稅淨額</th>
+                            <th style="border: 1px solid black; padding: 8px; text-align: right;">5% 營業稅額</th>
+                            <th style="border: 1px solid black; padding: 8px; text-align: right;">含稅總計</th>
+                        </tr>
+                    </thead>
+                    <tbody id="printTableBody2"></tbody>
+                </table>
+                <div id="printFooter2" style="margin-top: 20px; font-weight: bold; text-align: right;"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 邏輯腳本區塊 -->
+    <script>
+        // 初始化 Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCh3YueHa9dEHnOiSqSmpgvRs4hSqqe0LE",
+            authDomain: "as-6c510.firebaseapp.com",
+            projectId: "as-6c510",
+            storageBucket: "as-6c510.firebasestorage.app",
+            messagingSenderId: "1085839604733",
+            appId: "1:1085839604733:web:3e792309986813d5b57794"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        let isTesterMode = false;
+        let transactions1 = [];
+        let transactions2 = [];
+        let prevOverpayment1 = 0;
+        let prevOverpayment2 = 0;
+
+        // 檢查是否有測試人員單機登入紀錄
+        window.onload = () => { 
+            document.getElementById('date1').valueAsDate = new Date(); 
+            document.getElementById('date2').valueAsDate = new Date(); 
+
+            if (localStorage.getItem('is_tester_session') === 'true') {
+                loginAsTester();
+            }
+        };
+
+        // 登入狀態監聽 (Firebase)
+        auth.onAuthStateChanged((user) => {
+            if (user && !isTesterMode) {
+                document.getElementById('loginScreen').classList.add('hidden');
+                document.getElementById('userEmailDisplay').innerText = user.email;
+                updateStatusBadge(true, "雲端同步模式已連線");
+                initCloudSync();
+            } else if (!isTesterMode) {
+                document.getElementById('loginScreen').classList.remove('hidden');
+            }
+        });
+
+        // Google 快捷登入
+        function loginWithGoogle() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithPopup(provider).catch((error) => {
+                const errEl = document.getElementById('loginError');
+                errEl.innerText = "Google 登入失敗：" + error.message;
+                errEl.classList.remove('hidden');
+            });
+        }
+
+        // 測試人員單機登入 (僅本機 LocalStorage)
+        function loginAsTester() {
+            isTesterMode = true;
+            localStorage.setItem('is_tester_session', 'true');
+            document.getElementById('loginScreen').classList.add('hidden');
+            document.getElementById('userEmailDisplay').innerText = "🧪 測試人員 (單機模式)";
+            updateStatusBadge(false, "測試人員單機模式 (僅存本機 LocalStorage)");
+            initLocalSync();
+        }
+
+        function updateStatusBadge(isCloud, text) {
+            const dot1 = document.getElementById('syncDot1');
+            const dot2 = document.getElementById('syncDot2');
+            const txt1 = document.getElementById('syncStatus1');
+            const txt2 = document.getElementById('syncStatus2');
+
+            txt1.innerText = text;
+            txt2.innerText = text;
+
+            if (isCloud) {
+                dot1.className = "inline-block w-2 h-2 bg-emerald-500 rounded-full animate-pulse";
+                dot2.className = "inline-block w-2 h-2 bg-emerald-500 rounded-full animate-pulse";
+            } else {
+                dot1.className = "inline-block w-2 h-2 bg-amber-500 rounded-full animate-pulse";
+                dot2.className = "inline-block w-2 h-2 bg-amber-500 rounded-full animate-pulse";
+            }
+        }
+
+        // 登出
+        function logout() {
+            if (isTesterMode) {
+                isTesterMode = false;
+                localStorage.removeItem('is_tester_session');
+                document.getElementById('loginScreen').classList.remove('hidden');
+            } else {
+                auth.signOut();
+            }
+        }
+
+        // 帳號密碼登入
+        document.getElementById('loginForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const errEl = document.getElementById('loginError');
+            
+            auth.signInWithEmailAndPassword(email, password)
+                .catch((error) => {
+                    errEl.innerText = "登入失敗：" + error.message;
+                    errEl.classList.remove('hidden');
+                });
+        });
+
+        // 1. 雲端同步模式
+        function initCloudSync() {
+            db.collection('xinkai_transactions').orderBy('date', 'desc').onSnapshot((snapshot) => {
+                transactions1 = [];
+                snapshot.forEach((doc) => transactions1.push({ id: doc.id, ...doc.data() }));
+                renderAll1();
+            });
+
+            db.collection('settings').doc('xinkai').get().then((doc) => {
+                if (doc.exists) {
+                    prevOverpayment1 = doc.data().prevOverpayment || 0;
+                    document.getElementById('prevOverpayment1').value = prevOverpayment1 || '';
+                    renderAll1();
+                }
+            });
+
+            db.collection('zhenfeng_transactions').orderBy('date', 'desc').onSnapshot((snapshot) => {
+                transactions2 = [];
+                snapshot.forEach((doc) => transactions2.push({ id: doc.id, ...doc.data() }));
+                renderAll2();
+            });
+
+            db.collection('settings').doc('zhenfeng').get().then((doc) => {
+                if (doc.exists) {
+                    prevOverpayment2 = doc.data().prevOverpayment || 0;
+                    document.getElementById('prevOverpayment2').value = prevOverpayment2 || '';
+                    renderAll2();
+                }
+            });
+        }
+
+        // 2. 測試人員單機 LocalStorage 模式
+        function initLocalSync() {
+            transactions1 = JSON.parse(localStorage.getItem('tester_xinkai_data')) || [];
+            prevOverpayment1 = parseFloat(localStorage.getItem('tester_xinkai_prev')) || 0;
+            document.getElementById('prevOverpayment1').value = prevOverpayment1 || '';
+
+            transactions2 = JSON.parse(localStorage.getItem('tester_zhenfeng_data')) || [];
+            prevOverpayment2 = parseFloat(localStorage.getItem('tester_zhenfeng_prev')) || 0;
+            document.getElementById('prevOverpayment2').value = prevOverpayment2 || '';
+
+            renderAll1();
+            renderAll2();
+        }
+
+        function savePrevOverpayment(tabNum) {
+            if (tabNum === 1) {
+                prevOverpayment1 = parseFloat(document.getElementById('prevOverpayment1').value) || 0;
+                if (isTesterMode) {
+                    localStorage.setItem('tester_xinkai_prev', prevOverpayment1);
+                } else {
+                    db.collection('settings').doc('xinkai').set({ prevOverpayment: prevOverpayment1 });
+                }
+                renderAll1();
+            } else {
+                prevOverpayment2 = parseFloat(document.getElementById('prevOverpayment2').value) || 0;
+                if (isTesterMode) {
+                    localStorage.setItem('tester_zhenfeng_prev', prevOverpayment2);
+                } else {
+                    db.collection('settings').doc('zhenfeng').set({ prevOverpayment: prevOverpayment2 });
+                }
+                renderAll2();
+            }
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.add('hidden');
+                el.classList.remove('print-active');
+            });
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+
+            const target = document.getElementById(tabId);
+            target.classList.remove('hidden');
+            target.classList.add('print-active');
+
+            if(tabId === 'tab1') {
+                document.getElementById('btn-tab1').classList.add('active');
+                renderAll1();
+            } else {
+                document.getElementById('btn-tab2').classList.add('active');
+                renderAll2();
+            }
+        }
+
+        // 匯出 CSV
+        function exportCSV(tabNum) {
+            const companyName = tabNum === 1 ? '昕鎧國際有限公司' : '震峰有限公司';
+            const data = tabNum === 1 ? transactions1 : transactions2;
+            const pFilter = document.getElementById(`periodFilter${tabNum}`).value;
+            const tFilter = document.getElementById(`typeFilter${tabNum}`).value;
+
+            let filtered = data;
+            if (pFilter !== 'all') filtered = filtered.filter(t => t.period == pFilter);
+            if (tFilter !== 'all') filtered = filtered.filter(t => t.type === tFilter);
+
+            if (filtered.length === 0) {
+                alert('目前沒有資料可供匯出！');
+                return;
+            }
+
+            let csvContent = "\uFEFF日期,類型,摘要說明,未稅淨額,5%營業稅額,含稅總額\n";
+            filtered.forEach(t => {
+                const exAmt = Math.round(t.total / 1.05);
+                const taxAmt = t.total - exAmt;
+                const typeText = t.type === 'sales' ? '銷項收入' : '進項支出';
+                const safeDesc = `"${t.desc.replace(/"/g, '""')}"`;
+                csvContent += `${t.date},${typeText},${safeDesc},${exAmt},${taxAmt},${t.total}\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `${companyName}_營業稅對帳明細_${new Date().toISOString().slice(0, 10)}.csv`;
+            link.click();
+        }
+
+        /* ==================== 分頁 1 邏輯 ==================== */
+        const ui1 = {
+            desc: document.getElementById('desc1'),
+            type: document.getElementById('type1'),
+            inclusiveAmount: document.getElementById('inclusiveAmount1'),
+            previewNet: document.getElementById('previewNet1'),
+            previewTax: document.getElementById('previewTax1'),
+            reminder: document.getElementById('smartReminder1'),
+            reminderList: document.getElementById('reminderList1')
+        };
+
+        ui1.inclusiveAmount.addEventListener('input', (e) => {
+            const total = parseFloat(e.target.value) || 0;
+            const net = Math.round(total / 1.05);
+            ui1.previewNet.innerText = '$' + net.toLocaleString();
+            ui1.previewTax.innerText = '$' + (total - net).toLocaleString();
+        });
+
+        ui1.desc.addEventListener('input', (e) => {
+            const val = e.target.value;
+            if (!val) { ui1.reminder.classList.add('hidden'); return; }
+            const lowerVal = val.toLowerCase();
+            const pKeys = ['買', '購', '進', '成本', '收購', '修', '油', '件', '零件', '藥劑', '海綿', '膜料', '刮板', '租金', '薪資', '水電'];
+            const sKeys = ['賣', '售', '銷', '施工', '收入', '鍍膜', '包膜工程', '洗車', '服務費', '佣金'];
+            let detectedType = ui1.type.value;
+            if (pKeys.some(k => lowerVal.includes(k))) detectedType = 'purchase';
+            else if (sKeys.some(k => lowerVal.includes(k))) detectedType = 'sales';
+            ui1.type.value = detectedType;
+        });
+
+        document.getElementById('taxForm1').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const date = document.getElementById('date1').value || new Date().toISOString().slice(0, 10);
+            const total = parseFloat(ui1.inclusiveAmount.value) || 0;
+            const exAmount = Math.round(total / 1.05);
+            const newEntry = {
+                id: isTesterMode ? Date.now().toString() : undefined,
+                date: date,
+                period: Math.ceil((new Date(date).getMonth() + 1) / 2),
+                type: ui1.type.value,
+                desc: ui1.desc.value,
+                total: total,
+                amount: exAmount,
+                tax: total - exAmount
+            };
+
+            if (isTesterMode) {
+                transactions1.unshift(newEntry);
+                localStorage.setItem('tester_xinkai_data', JSON.stringify(transactions1));
+                renderAll1();
+            } else {
+                newEntry.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                db.collection('xinkai_transactions').add(newEntry);
+            }
+
+            e.target.reset();
+            ui1.previewNet.innerText = '$0';
+            ui1.previewTax.innerText = '$0';
+            ui1.reminder.classList.add('hidden');
+        });
+
+        function renderAll1() {
+            const pFilter = document.getElementById('periodFilter1').value;
+            const tFilter = document.getElementById('typeFilter1').value;
+            let displayData = transactions1;
+            if (pFilter !== 'all') displayData = displayData.filter(t => t.period == pFilter);
+            if (tFilter !== 'all') displayData = displayData.filter(t => t.type === tFilter);
+            
+            updateStats1(displayData);
+
+            const tbody = document.getElementById('dataTable1');
+            const ptbody = document.getElementById('printTableBody1');
+            tbody.innerHTML = '';
+            ptbody.innerHTML = '';
+
+            displayData.forEach(t => {
+                const isS = t.type === 'sales';
+                const exAmt = Math.round(t.total / 1.05);
+                const taxAmt = t.total - exAmt;
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-6 py-4"><input type="date" value="${t.date}" onchange="updateRowField(1, '${t.id}', 'date', this.value)" class="bg-transparent border-none text-xs font-bold text-slate-600 focus:ring-1 focus:ring-blue-400 rounded"></td>
+                        <td class="px-6 py-4">
+                            <select onchange="updateRowField(1, '${t.id}', 'type', this.value)" class="bg-transparent border-none text-[10px] font-black tracking-widest ${isS?'text-blue-600':'text-emerald-600'}">
+                                <option value="sales" ${isS?'selected':''}>銷項收入</option>
+                                <option value="purchase" ${!isS?'selected':''}>進項支出</option>
+                            </select>
+                        </td>
+                        <td class="px-6 py-4 font-bold text-slate-800">${t.desc}</td>
+                        <td class="px-6 py-4 text-right font-mono text-slate-500">$${exAmt.toLocaleString()}</td>
+                        <td class="px-6 py-4 text-right font-mono text-slate-500">$${taxAmt.toLocaleString()}</td>
+                        <td class="px-6 py-4 text-right font-black text-slate-900 bg-slate-50/50">$${Math.round(t.total).toLocaleString()}</td>
+                        <td class="px-6 py-4 text-center">
+                            <button onclick="deleteEntry(1, '${t.id}')" class="text-slate-300 hover:text-red-500 transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                ptbody.innerHTML += `
+                    <tr>
+                        <td style="border: 1px solid black; padding: 5px;">${t.date}</td>
+                        <td style="border: 1px solid black; padding: 5px;">${isS?'銷項':'進項'}</td>
+                        <td style="border: 1px solid black; padding: 5px;">${t.desc}</td>
+                        <td style="border: 1px solid black; padding: 5px; text-align:right;">$${exAmt.toLocaleString()}</td>
+                        <td style="border: 1px solid black; padding: 5px; text-align:right;">$${taxAmt.toLocaleString()}</td>
+                        <td style="border: 1px solid black; padding: 5px; text-align:right;">$${Math.round(t.total).toLocaleString()}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        function updateStats1(data) {
+            let sIncl = 0, pIncl = 0, sTax = 0, pTax = 0, sCount = 0, pCount = 0;
+            data.forEach(t => {
+                const total = Number(t.total) || 0;
+                const tax = Number(t.tax) || (total - Math.round(total / 1.05));
+                if (t.type === 'sales') { sIncl += total; sTax += tax; sCount++; }
+                else { pIncl += total; pTax += tax; pCount++; }
+            });
+
+            document.getElementById('statTotalSalesIncl1').innerText = '$' + Math.round(sIncl).toLocaleString();
+            document.getElementById('statTotalPurchasesIncl1').innerText = '$' + Math.round(pIncl).toLocaleString();
+            document.getElementById('statSalesTax1').innerText = '$' + Math.round(sTax).toLocaleString();
+            document.getElementById('countSales1').innerText = sCount + ' 筆';
+            document.getElementById('countPurchases1').innerText = pCount + ' 筆';
+            
+            const payable = sTax - pTax - prevOverpayment1;
+            const pEl = document.getElementById('statPayableTax1');
+            const cardEl = document.getElementById('payableCard1');
+            
+            pEl.innerText = '$' + Math.round(Math.abs(payable)).toLocaleString() + (payable >= 0 ? ' (應納)' : ' (留抵)');
+            document.getElementById('formulaDisplay1').innerText = `公式：(銷項 ${Math.round(sTax)} - 進項 ${Math.round(pTax)} - 留抵 ${Math.round(prevOverpayment1)})`;
+            cardEl.className = payable >= 0 ? "bg-rose-600 p-6 rounded-2xl shadow-lg border border-rose-700 text-white relative overflow-hidden transition-colors" : "bg-emerald-600 p-6 rounded-2xl shadow-lg border border-emerald-700 text-white relative overflow-hidden transition-colors";
+
+            document.getElementById('printFooter1').innerHTML = `
+                銷項稅額: ${Math.round(sTax).toLocaleString()} | 進項稅額: ${Math.round(pTax).toLocaleString()} | 上期留抵: ${Math.round(prevOverpayment1).toLocaleString()} <br>
+                <span style="font-size: 1.2em;">本期結算: ${Math.round(Math.abs(payable)).toLocaleString()} ${payable >= 0 ? '(應納)' : '(留抵)'}</span>
+            `;
+        }
+
+        /* ==================== 分頁 2 邏輯 ==================== */
+        const keywords2 = {
+            sales: ['洗車', '鍍膜', '美容', '打蠟', '內裝', '皮革', '除臭', '除鐵粉', '拋光', '鍍鉻', '貼膜', '包膜', '犀牛皮', '改色', '隔熱紙', '燈膜', 'PPF', '收入', '服務費', '工資', '尾款', '訂金', '開發票', '洗車券'],
+            purchase: ['藥水', '海綿', '毛巾', '蠟', '鍍膜液', '洗車精', '柏油', '鐵粉', '拋光盤', '機器修繕', '高壓水槍', '吸塵器', '空壓機', '膜料', '膠水', '刮板', '美工刀', '熱風槍', '酒精', '3M', 'Avery', 'Oracal', '進貨', '耗材', '租金', '房租', '水費', '電費', '薪資', '加油', '廣告', 'Facebook']
+        };
+
+        const descInput2 = document.getElementById('desc2');
+        const typeSelect2 = document.getElementById('type2');
+        const hintEl2 = document.getElementById('smartHint2');
+        const inclusiveAmount2 = document.getElementById('inclusiveAmount2');
+
+        inclusiveAmount2.addEventListener('input', (e) => {
+            const total = parseFloat(e.target.value) || 0;
+            const net = Math.round(total / 1.05);
+            document.getElementById('previewNet2').innerText = '$' + net.toLocaleString();
+            document.getElementById('previewTax2').innerText = '$' + (total - net).toLocaleString();
+        });
+
+        descInput2.addEventListener('input', (e) => {
+            const val = e.target.value;
+            if (!val) { hintEl2.innerText = ""; return; }
+            const upperVal = val.toUpperCase();
+            if (keywords2.sales.some(k => upperVal.includes(k.toUpperCase()))) {
+                typeSelect2.value = 'sales';
+                hintEl2.innerText = "💡 自動判定：銷項(收入)";
+                hintEl2.style.color = "#2563eb";
+            } else if (keywords2.purchase.some(k => upperVal.includes(k.toUpperCase()))) {
+                typeSelect2.value = 'purchase';
+                hintEl2.innerText = "💡 自動判定：進項(支出)";
+                hintEl2.style.color = "#059669";
+            } else { hintEl2.innerText = ""; }
+        });
+
+        document.getElementById('taxForm2').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const date = document.getElementById('date2').value || new Date().toISOString().slice(0, 10);
+            const total = parseFloat(inclusiveAmount2.value) || 0;
+            const exAmount = Math.round(total / 1.05);
+            const newEntry = {
+                id: isTesterMode ? Date.now().toString() : undefined,
+                date: date,
+                period: Math.ceil((new Date(date).getMonth() + 1) / 2),
+                type: typeSelect2.value,
+                desc: descInput2.value,
+                total: total,
+                amount: exAmount,
+                tax: total - exAmount
+            };
+
+            if (isTesterMode) {
+                transactions2.unshift(newEntry);
+                localStorage.setItem('tester_zhenfeng_data', JSON.stringify(transactions2));
+                renderAll2();
+            } else {
+                newEntry.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                db.collection('zhenfeng_transactions').add(newEntry);
+            }
+
+            e.target.reset();
+            document.getElementById('previewNet2').innerText = '$0';
+            document.getElementById('previewTax2').innerText = '$0';
+            hintEl2.innerText = "";
+        });
+
+        function renderAll2() {
+            const pFilter = document.getElementById('periodFilter2').value;
+            const tFilter = document.getElementById('typeFilter2').value;
+            let displayData = transactions2;
+            if (pFilter !== 'all') displayData = displayData.filter(t => t.period == pFilter);
+            if (tFilter !== 'all') displayData = displayData.filter(t => t.type === tFilter);
+            
+            updateStats2(displayData);
+
+            const tbody = document.getElementById('dataTable2');
+            const ptbody = document.getElementById('printTableBody2');
+            tbody.innerHTML = '';
+            ptbody.innerHTML = '';
+
+            displayData.forEach(t => {
+                const isS = t.type === 'sales';
+                const exAmt = Math.round(t.total / 1.05);
+                const taxAmt = t.total - exAmt;
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-6 py-4"><input type="date" value="${t.date}" onchange="updateRowField(2, '${t.id}', 'date', this.value)" class="bg-transparent border-none text-xs font-bold text-slate-600 focus:ring-1 focus:ring-blue-400 rounded"></td>
+                        <td class="px-6 py-4">
+                            <select onchange="updateRowField(2, '${t.id}', 'type', this.value)" class="bg-transparent border-none text-[10px] font-black tracking-widest ${isS?'text-blue-600':'text-emerald-600'}">
+                                <option value="sales" ${isS?'selected':''}>銷項收入</option>
+                                <option value="purchase" ${!isS?'selected':''}>進項支出</option>
+                            </select>
+                        </td>
+                        <td class="px-6 py-4 font-bold text-slate-800">${t.desc}</td>
+                        <td class="px-6 py-4 text-right font-mono text-slate-500">$${exAmt.toLocaleString()}</td>
+                        <td class="px-6 py-4 text-right font-mono text-slate-500">$${taxAmt.toLocaleString()}</td>
+                        <td class="px-6 py-4 text-right font-black text-slate-900 bg-slate-50/50">$${Math.round(t.total).toLocaleString()}</td>
+                        <td class="px-6 py-4 text-center">
+                            <button onclick="deleteEntry(2, '${t.id}')" class="text-slate-300 hover:text-red-500 transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                ptbody.innerHTML += `
+                    <tr>
+                        <td style="border: 1px solid black; padding: 5px;">${t.date}</td>
+                        <td style="border: 1px solid black; padding: 5px;">${isS?'銷項':'進項'}</td>
+                        <td style="border: 1px solid black; padding: 5px;">${t.desc}</td>
+                        <td style="border: 1px solid black; padding: 5px; text-align:right;">$${exAmt.toLocaleString()}</td>
+                        <td style="border: 1px solid black; padding: 5px; text-align:right;">$${taxAmt.toLocaleString()}</td>
+                        <td style="border: 1px solid black; padding: 5px; text-align:right;">$${Math.round(t.total).toLocaleString()}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        function updateStats2(data) {
+            let sIncl = 0, pIncl = 0, sTax = 0, pTax = 0, sCount = 0, pCount = 0;
+            data.forEach(t => {
+                const total = Number(t.total) || 0;
+                const tax = Number(t.tax) || (total - Math.round(total / 1.05));
+                if (t.type === 'sales') { sIncl += total; sTax += tax; sCount++; }
+                else { pIncl += total; pTax += tax; pCount++; }
+            });
+
+            document.getElementById('statTotalSalesIncl2').innerText = '$' + Math.round(sIncl).toLocaleString();
+            document.getElementById('statTotalPurchasesIncl2').innerText = '$' + Math.round(pIncl).toLocaleString();
+            document.getElementById('statSalesTax2').innerText = '$' + Math.round(sTax).toLocaleString();
+            document.getElementById('countSales2').innerText = sCount + ' 筆';
+            document.getElementById('countPurchases2').innerText = pCount + ' 筆';
+            
+            const payable = sTax - pTax - prevOverpayment2;
+            const pEl = document.getElementById('statPayableTax2');
+            const cardEl = document.getElementById('payableCard2');
+            
+            pEl.innerText = '$' + Math.round(Math.abs(payable)).toLocaleString() + (payable >= 0 ? ' (應納)' : ' (留抵)');
+            document.getElementById('formulaDisplay2').innerText = `公式：(銷項 ${Math.round(sTax)} - 進項 ${Math.round(pTax)} - 留抵 ${Math.round(prevOverpayment2)})`;
+            cardEl.className = payable >= 0 ? "bg-rose-600 p-6 rounded-2xl shadow-lg border border-rose-700 text-white relative overflow-hidden transition-colors" : "bg-emerald-600 p-6 rounded-2xl shadow-lg border border-emerald-700 text-white relative overflow-hidden transition-colors";
+
+            document.getElementById('printFooter2').innerHTML = `
+                銷項稅額: ${Math.round(sTax).toLocaleString()} | 進項稅額: ${Math.round(pTax).toLocaleString()} | 上期留抵: ${Math.round(prevOverpayment2).toLocaleString()} <br>
+                <span style="font-size: 1.2em;">本期結算: ${Math.round(Math.abs(payable)).toLocaleString()} ${payable >= 0 ? '(應納)' : '(留抵)'}</span>
+            `;
+        }
+
+        // 修改與刪除通用函式 (自動判斷 雲端/單機)
+        function updateRowField(tabNum, id, field, value) {
+            if (isTesterMode) {
+                const list = tabNum === 1 ? transactions1 : transactions2;
+                const item = list.find(t => t.id === id);
+                if (item) {
+                    item[field] = value;
+                    if (field === 'date') item.period = Math.ceil((new Date(value).getMonth() + 1) / 2);
+                    localStorage.setItem(tabNum === 1 ? 'tester_xinkai_data' : 'tester_zhenfeng_data', JSON.stringify(list));
+                    tabNum === 1 ? renderAll1() : renderAll2();
+                }
+            } else {
+                const colName = tabNum === 1 ? 'xinkai_transactions' : 'zhenfeng_transactions';
+                const updateData = {};
+                updateData[field] = value;
+                if (field === 'date') updateData['period'] = Math.ceil((new Date(value).getMonth() + 1) / 2);
+                db.collection(colName).doc(id).update(updateData);
+            }
+        }
+
+        function deleteEntry(tabNum, id) {
+            if (confirm('確定刪除此筆資料？')) {
+                if (isTesterMode) {
+                    if (tabNum === 1) {
+                        transactions1 = transactions1.filter(t => t.id !== id);
+                        localStorage.setItem('tester_xinkai_data', JSON.stringify(transactions1));
+                        renderAll1();
+                    } else {
+                        transactions2 = transactions2.filter(t => t.id !== id);
+                        localStorage.setItem('tester_zhenfeng_data', JSON.stringify(transactions2));
+                        renderAll2();
+                    }
+                } else {
+                    const colName = tabNum === 1 ? 'xinkai_transactions' : 'zhenfeng_transactions';
+                    db.collection(colName).doc(id).delete();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
